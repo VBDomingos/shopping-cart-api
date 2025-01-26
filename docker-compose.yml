@@ -1,0 +1,61 @@
+services:
+    db:
+        image: postgres:16-alpine
+        environment:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: password
+        ports:
+            - '5432:5432'
+        volumes:
+            - postgres13:/var/lib/postgresql/data
+        healthcheck: #!! Garantir que o db está realmente conectável antes de conectar
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 5s
+            timeout: 5s
+            retries: 5
+
+    redis:
+        image: redis:7.0.15-alpine
+        ports:
+            - '6379:6379'
+        volumes:
+            - redis_data:/data  
+
+    web:
+        build:
+            context: .
+        command: sh -c "rm -f tmp/pids/server.pid && bundle exec rails db:create db:migrate db:seed && bundle exec rails server -b 0.0.0.0 -p 3000 && bundle exec sidekiq"
+        volumes:
+            - .:/rails
+        ports:
+            - '3000:3000'
+        depends_on:
+            db:
+                condition: service_healthy
+            redis:
+                 condition: service_started
+        environment:
+            SECRET_KEY_BASE: "61a95d9a07e42d33619238f4355ca91059279190c5496b571f6c7e2a5a25c4ece49225028b9b503741d35bc82ea0a78b63968c7b9776aacd020d72fc806625b1"
+            RAILS_ENV: development
+            DATABASE_URL: postgresql://postgres:password@db:5432/store_development
+            REDIS_URL: redis://redis:6379/0
+
+    test:
+        build: .
+        command: sh -c "bundle exec rails db:prepare && bundle exec rspec"
+        volumes:
+            - .:/rails
+        depends_on:
+            db:
+                condition: service_healthy
+            redis:
+                 condition: service_started
+        environment:
+            SECRET_KEY_BASE: "61a95d9a07e42d33619238f4355ca91059279190c5496b571f6c7e2a5a25c4ece49225028b9b503741d35bc82ea0a78b63968c7b9776aacd020d72fc806625b1"
+            RAILS_ENV: test
+            DATABASE_URL: postgresql://postgres:password@db:5432/store_test #!! Estava com nome genérico de db
+            REDIS_URL: redis://redis:6379/0
+
+volumes:
+    postgres13:
+    redis_data:
